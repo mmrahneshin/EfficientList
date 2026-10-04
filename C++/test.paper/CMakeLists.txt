@@ -1,17 +1,16 @@
-# add_executable(pureParitySeeking-23RedBlackBinaryTree pureParitySeeking-23RedBlackBinaryTree.cpp)
-# target_link_libraries(pureParitySeeking-23RedBlackBinaryTree)
 
-# add_executable(testAmountOfBlackNode testAmountOfBlackNode.cpp)
-# target_link_libraries(testAmountOfBlackNode)
-
-# add_executable(testTemplate testTemplate.cpp)
-# target_link_libraries(testTemplate)
 
 add_executable(efficientList_vs_vector_half_remove efficientList_vs_vector_half_remove.cpp)
 target_link_libraries(efficientList_vs_vector_half_remove)
 
+add_executable(efficientList_vs_PBDS efficientList_vs_PBDS.cpp)
+target_link_libraries(efficientList_vs_PBDS)
+
+add_executable(efficientList_vs_PBDS_deque efficientList_vs_PBDS_deque.cpp)
+target_link_libraries(efficientList_vs_PBDS_deque)
+
+add_executable(efficientList_vs_PBDS_dequeV2 efficientList_vs_PBDS_dequeV2.cpp)
+target_link_libraries(efficientList_vs_PBDS_dequeV2)
+
 add_executable(efficientList_vs_vector_remove_all efficientList_vs_vector_remove_all.cpp)
 target_link_libraries(efficientList_vs_vector_remove_all)
-
-# add_executable(drawTree drawTree.cpp)
-# target_link_libraries(drawTree)
