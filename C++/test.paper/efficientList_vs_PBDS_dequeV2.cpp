@@ -6,7 +6,6 @@
 #include <stack>
 #include <sstream>
 #include <optional>
-#include <vector>
 #include <list>
 #include <map>
 #include <fstream>
@@ -14,6 +13,10 @@
 #include <iomanip>  // Add this for setprecision
 #include <unistd.h> // sysconf, _SC_PAGE_SIZE
 #include <malloc.h> // malloc_trim
+#include "hybrid_list_v2.hpp"
+#include "pbds_only_list.hpp"
+#include <deque>
+#include <random>
 
 #include "../src/IndexedPPS23RBBinaryTreeNode.h"
 #include "../src/IndexedPPS23RedBlackBinaryTree.h"
@@ -30,30 +33,9 @@ high_resolution_clock::time_point start_time, end_time; // Change these to chron
 double timeTaken;
 double memoryUsed;
 
-void process_mem_usage(double &resident_set)
-{
-    resident_set = 0.0;
-
-    // the two fields we want
-    unsigned long vsize;
-    long rss;
-    {
-        std::string ignore;
-        std::ifstream ifs("/proc/self/stat", std::ios_base::in);
-        ifs >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> rss;
-    }
-
-    long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024; // in case x86-64 is configured to use 2MB pages
-    resident_set = rss * page_size_kb;
-}
-
 void insertToEfficientList(EfficientList<int> *ell, int size,
-                           map<int, double> *timeTaken_map = nullptr,
-                           map<int, double> *memoryUsed_map = nullptr)
+                           map<int, double> *timeTaken_map = nullptr)
 {
-    double rss;
-    process_mem_usage(rss);
-    double startMemory = rss;
     start_time = high_resolution_clock::now();
     for (int i = 0; i < size; i++)
     {
@@ -67,42 +49,26 @@ void insertToEfficientList(EfficientList<int> *ell, int size,
     }
     end_time = high_resolution_clock::now();
 
-    process_mem_usage(rss);
-    double endMemory = rss;
-    memoryUsed = endMemory - startMemory;
-
     auto duration = duration_cast<nanoseconds>(end_time - start_time);
     timeTaken = duration.count() / 1e9; // Convert nanoseconds to seconds with high precision
     if (timeTaken_map != nullptr)
     {
         timeTaken_map->insert({size, timeTaken});
     }
-    if (memoryUsed_map != nullptr)
-    {
-        memoryUsed_map->insert({size, memoryUsed});
-    }
+
     // cout << "insert time taken efficient list: " << timeTaken << endl;
 }
 
-void insertToVector(vector<int> *vec, int size,
-                    map<int, double> *timeTaken_map = nullptr,
-                    map<int, double> *memoryUsed_map = nullptr)
+void insertToPbdsDeque(HybridListV2<int> *pbds_deque, int size,
+                       map<int, double> *timeTaken_map = nullptr)
 {
-    double rss;
-    process_mem_usage(rss);
-    double startMemory = rss;
-
     start_time = high_resolution_clock::now();
     int i;
     for (i = 0; i < size; i++)
     {
-        vec->insert(vec->begin() + indexes[i], values[i]);
+        pbds_deque->insert(indexes[i], values[i]);
     }
     end_time = high_resolution_clock::now();
-
-    process_mem_usage(rss);
-    double endMemory = rss;
-    memoryUsed = endMemory - startMemory;
 
     auto duration = duration_cast<nanoseconds>(end_time - start_time);
     timeTaken = duration.count() / 1e9; // Convert nanoseconds to seconds with high precision
@@ -111,11 +77,7 @@ void insertToVector(vector<int> *vec, int size,
     {
         timeTaken_map->insert({size, timeTaken});
     }
-    if (memoryUsed_map != nullptr)
-    {
-        memoryUsed_map->insert({size, memoryUsed});
-    }
-    // cout << "insert time taken vector: " << timeTaken << endl;
+    // cout << "insert time taken pbdstor: " << timeTaken << endl;
 }
 
 // void pushFrontToList(int i, list<int> *lst, int size)
@@ -142,18 +104,18 @@ void insertToVector(vector<int> *vec, int size,
 //     cout << "insert time taken list (push_back): " << timeTaken << endl;
 // }
 
-bool valueCheck(EfficientList<int> *ell, vector<int> *vec, int size,
-                map<int, double> *ell_timeTaken_map = nullptr, map<int, double> *vec_timeTaken_map = nullptr)
+bool valueCheck(EfficientList<int> *ell, HybridListV2<int> *pbds_deque, int size,
+                map<int, double> *ell_timeTaken_map = nullptr, map<int, double> *pbds_timeTaken_map = nullptr)
 {
 
     bool result = true;
     // cout << "\n**efficient list :\nYours\tCorrect" << endl;
     double ellTimeTaken = 0;
-    double vectorTimeTaken = 0;
-    int ellValue, vectorValue;
+    double pbdstorTimeTaken = 0;
+    int ellValue, pbdstorValue;
     for (int i = 0; i < size; i++)
     {
-        if ((*ell)[i] != (*vec)[i])
+        if ((*ell)[i] != pbds_deque->get(i))
         {
             result = false;
             break;
@@ -172,23 +134,23 @@ bool valueCheck(EfficientList<int> *ell, vector<int> *vec, int size,
     start_time = high_resolution_clock::now();
     for (int i = 0; i < size; i++)
     {
-        vectorValue = (*vec)[i];
+        pbdstorValue = pbds_deque->get(i);
     }
     end_time = high_resolution_clock::now();
     duration = duration_cast<nanoseconds>(end_time - start_time);
-    vectorTimeTaken = duration.count() / 1e9;
+    pbdstorTimeTaken = duration.count() / 1e9;
 
     // cout << "ell get time taken: " << ellTimeTaken << endl;
-    // cout << "vector get time taken: " << vectorTimeTaken << endl;
+    // cout << "pbdstor get time taken: " << pbdstorTimeTaken << endl;
 
     if (ell_timeTaken_map != nullptr)
     {
         ell_timeTaken_map->insert({size, ellTimeTaken});
     }
 
-    if (vec_timeTaken_map != nullptr)
+    if (pbds_timeTaken_map != nullptr)
     {
-        vec_timeTaken_map->insert({size, vectorTimeTaken});
+        pbds_timeTaken_map->insert({size, pbdstorTimeTaken});
     }
 
     return result;
@@ -229,12 +191,8 @@ bool valueCheck(EfficientList<int> *ell, vector<int> *vec, int size,
 // }
 
 void removeFromEfficientList(EfficientList<int> *ell, int deleteIndexesSize,
-                             map<int, double> *timeTaken_map = nullptr,
-                             map<int, double> *memoryUsed_map = nullptr)
+                             map<int, double> *timeTaken_map = nullptr)
 {
-    double rss;
-    process_mem_usage(rss);
-    double startMemory = rss;
     start_time = high_resolution_clock::now();
     for (int i = 0; i < deleteIndexesSize; i++)
     {
@@ -249,44 +207,28 @@ void removeFromEfficientList(EfficientList<int> *ell, int deleteIndexesSize,
     end_time = high_resolution_clock::now();
     malloc_trim(0);
 
-    process_mem_usage(rss);
-    double endMemory = rss;
-    memoryUsed = startMemory - endMemory;
-
     auto duration = duration_cast<nanoseconds>(end_time - start_time);
     timeTaken = duration.count() / 1e9;
     if (timeTaken_map != nullptr)
     {
         timeTaken_map->insert({deleteIndexesSize, timeTaken});
     }
-    if (memoryUsed_map != nullptr)
-    {
-        memoryUsed_map->insert({deleteIndexesSize, memoryUsed});
-    }
     // cout << "remove time taken efficient list: " << timeTaken << endl;
 }
 
-void removeFromVector(vector<int> *vec, int deleteIndexesSize,
-                      map<int, double> *timeTaken_map = nullptr,
-                      map<int, double> *memoryUsed_map = nullptr)
+void removeFromPbdsDeque(HybridListV2<int> *pbds_deque, int deleteIndexesSize,
+                         map<int, double> *timeTaken_map = nullptr)
 {
-    double rss;
-    process_mem_usage(rss);
-    double startMemory = rss;
 
     start_time = high_resolution_clock::now();
     int i;
     for (i = 0; i < deleteIndexesSize; i++)
     {
-        vec->erase(vec->begin() + deleteIndexes[i]);
+        pbds_deque->erase(deleteIndexes[i]);
     }
     end_time = high_resolution_clock::now();
-    vec->shrink_to_fit();
 
     malloc_trim(0);
-    process_mem_usage(rss);
-    double endMemory = rss;
-    memoryUsed = startMemory - endMemory;
 
     auto duration = duration_cast<nanoseconds>(end_time - start_time);
     timeTaken = duration.count() / 1e9;
@@ -294,11 +236,7 @@ void removeFromVector(vector<int> *vec, int deleteIndexesSize,
     {
         timeTaken_map->insert({deleteIndexesSize, timeTaken});
     }
-    if (memoryUsed_map != nullptr)
-    {
-        memoryUsed_map->insert({deleteIndexesSize, memoryUsed});
-    }
-    // cout << "remove time taken vector: " << timeTaken << endl;
+    // cout << "remove time taken pbdstor: " << timeTaken << endl;
 }
 
 // void popFrontFromList(int i, list<int> *lst, int deleteIndexesSize)
@@ -327,38 +265,6 @@ void removeFromVector(vector<int> *vec, int deleteIndexesSize,
 
 int main()
 {
-    // memory consumption
-    map<int, double> *pushBack_ell_memoryResult = new map<int, double>();
-    map<int, double> *pushBack_vec_memoryResult = new map<int, double>();
-    map<int, double> *popBackAfterPushBack_ell_memoryResult = new map<int, double>();
-    map<int, double> *popBackAfterPushBack_vec_memoryResult = new map<int, double>();
-    map<int, double> *popFrontAfterPushBack_ell_memoryResult = new map<int, double>();
-    map<int, double> *popFrontAfterPushBack_vec_memoryResult = new map<int, double>();
-    map<int, double> *removeRandomIndicesAfterPushBack_ell_memoryResult = new map<int, double>();
-    map<int, double> *removeRandomIndicesAfterPushBack_vec_memoryResult = new map<int, double>();
-
-    map<int, double> *pushFront_ell_memoryResult = new map<int, double>();
-    map<int, double> *pushFront_vec_memoryResult = new map<int, double>();
-    map<int, double> *popFrontAfterPushFront_ell_memoryResult = new map<int, double>();
-    map<int, double> *popFrontAfterPushFront_vec_memoryResult = new map<int, double>();
-    map<int, double> *popBackAfterPushFront_ell_memoryResult = new map<int, double>();
-    map<int, double> *popBackAfterPushFront_vec_memoryResult = new map<int, double>();
-
-    map<int, double> *insertRandomIndices_ell_memoryResult = new map<int, double>();
-    map<int, double> *insertRandomIndices_vec_memoryResult = new map<int, double>();
-    map<int, double> *removeRandomIndices_ell_memoryResult = new map<int, double>();
-    map<int, double> *removeRandomIndices_vec_memoryResult = new map<int, double>();
-
-    map<int, double> *pushFront_pushBack_ell_memoryResult = new map<int, double>();
-    map<int, double> *pushFront_pushBack_vec_memoryResult = new map<int, double>();
-    map<int, double> *popFront_popBack_ell_memoryResult = new map<int, double>();
-    map<int, double> *popFront_popBack_vec_memoryResult = new map<int, double>();
-
-    map<int, double> *pushBack_pushFront_ell_memoryResult = new map<int, double>();
-    map<int, double> *pushBack_pushFront_vec_memoryResult = new map<int, double>();
-    map<int, double> *popBack_popFront_ell_memoryResult = new map<int, double>();
-    map<int, double> *popBack_popFront_vec_memoryResult = new map<int, double>();
-
     // time taken results
     map<int, double> *pushBack_ellResult = new map<int, double>();
     map<int, double> *get_after_pushBack_ellResult = new map<int, double>();
@@ -372,17 +278,17 @@ int main()
     map<int, double> *removeRandomIndicesAfterPushBack_ellResult = new map<int, double>();
     map<int, double> *get_after_removeRandomIndicesAfterPushBack_ellResult = new map<int, double>();
 
-    map<int, double> *pushBack_vecResult = new map<int, double>();
-    map<int, double> *get_after_pushBack_vecResult = new map<int, double>();
+    map<int, double> *pushBack_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_pushBack_pbdsResult = new map<int, double>();
 
-    map<int, double> *popBackAfterPushBack_vecResult = new map<int, double>();
-    map<int, double> *get_after_popBackAfterPushBack_vecResult = new map<int, double>();
+    map<int, double> *popBackAfterPushBack_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_popBackAfterPushBack_pbdsResult = new map<int, double>();
 
-    map<int, double> *popFrontAfterPushBack_vecResult = new map<int, double>();
-    map<int, double> *get_after_popFrontAfterPushBack_vecResult = new map<int, double>();
+    map<int, double> *popFrontAfterPushBack_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_popFrontAfterPushBack_pbdsResult = new map<int, double>();
 
-    map<int, double> *removeRandomIndicesAfterPushBack_vecResult = new map<int, double>();
-    map<int, double> *get_after_removeRandomIndicesAfterPushBack_vecResult = new map<int, double>();
+    map<int, double> *removeRandomIndicesAfterPushBack_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_removeRandomIndicesAfterPushBack_pbdsResult = new map<int, double>();
 
     // push_front
     map<int, double> *pushFront_ellResult = new map<int, double>();
@@ -394,14 +300,14 @@ int main()
     map<int, double> *popBackAfterPushFront_ellResult = new map<int, double>();
     map<int, double> *get_after_popBackAfterPushFront_ellResult = new map<int, double>();
 
-    map<int, double> *pushFront_vecResult = new map<int, double>();
-    map<int, double> *get_after_pushFront_vecResult = new map<int, double>();
+    map<int, double> *pushFront_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_pushFront_pbdsResult = new map<int, double>();
 
-    map<int, double> *popFrontAfterPushFront_vecResult = new map<int, double>();
-    map<int, double> *get_after_popFrontAfterPushFront_vecResult = new map<int, double>();
+    map<int, double> *popFrontAfterPushFront_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_popFrontAfterPushFront_pbdsResult = new map<int, double>();
 
-    map<int, double> *popBackAfterPushFront_vecResult = new map<int, double>();
-    map<int, double> *get_after_popBackAfterPushFront_vecResult = new map<int, double>();
+    map<int, double> *popBackAfterPushFront_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_popBackAfterPushFront_pbdsResult = new map<int, double>();
 
     // insert random indices
     map<int, double> *insertRandomIndices_ellResult = new map<int, double>();
@@ -410,11 +316,11 @@ int main()
     map<int, double> *removeRandomIndices_ellResult = new map<int, double>();
     map<int, double> *get_after_removeRandomIndices_ellResult = new map<int, double>();
 
-    map<int, double> *insertRandomIndices_vecResult = new map<int, double>();
-    map<int, double> *get_after_insertRandomIndices_vecResult = new map<int, double>();
+    map<int, double> *insertRandomIndices_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_insertRandomIndices_pbdsResult = new map<int, double>();
 
-    map<int, double> *removeRandomIndices_vecResult = new map<int, double>();
-    map<int, double> *get_after_removeRandomIndices_vecResult = new map<int, double>();
+    map<int, double> *removeRandomIndices_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_removeRandomIndices_pbdsResult = new map<int, double>();
 
     // push_front then push_back
     map<int, double> *pushFront_pushBack_ellResult = new map<int, double>();
@@ -423,11 +329,11 @@ int main()
     map<int, double> *popFront_popBack_ellResult = new map<int, double>();
     map<int, double> *get_after_popFront_popBack_ellResult = new map<int, double>();
 
-    map<int, double> *pushFront_pushBack_vecResult = new map<int, double>();
-    map<int, double> *get_after_pushFront_pushBack_vecResult = new map<int, double>();
+    map<int, double> *pushFront_pushBack_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_pushFront_pushBack_pbdsResult = new map<int, double>();
 
-    map<int, double> *popFront_popBack_vecResult = new map<int, double>();
-    map<int, double> *get_after_popFront_popBack_vecResult = new map<int, double>();
+    map<int, double> *popFront_popBack_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_popFront_popBack_pbdsResult = new map<int, double>();
 
     // push_back then push_front
     map<int, double> *pushBack_pushFront_ellResult = new map<int, double>();
@@ -436,15 +342,15 @@ int main()
     map<int, double> *popBack_popFront_ellResult = new map<int, double>();
     map<int, double> *get_after_popBack_popFront_ellResult = new map<int, double>();
 
-    map<int, double> *pushBack_pushFront_vecResult = new map<int, double>();
-    map<int, double> *get_after_pushBack_pushFront_vecResult = new map<int, double>();
+    map<int, double> *pushBack_pushFront_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_pushBack_pushFront_pbdsResult = new map<int, double>();
 
-    map<int, double> *popBack_popFront_vecResult = new map<int, double>();
-    map<int, double> *get_after_popBack_popFront_vecResult = new map<int, double>();
+    map<int, double> *popBack_popFront_pbdsResult = new map<int, double>();
+    map<int, double> *get_after_popBack_popFront_pbdsResult = new map<int, double>();
 
-    for (int step = 1; step <= 100000; step *= 10)
+    for (int step = 1; step <= 1000000; step *= 10)
     {
-        for (int size = step; size < step * 10 && size <= 100000; size += step)
+        for (int size = step; size < step * 10 && size <= 2000000; size += step)
         {
             cout << size << endl;
             values = new int[size];
@@ -458,7 +364,7 @@ int main()
 
             bool result = true;
             EfficientList<int> *ell;
-            vector<int> *vec;
+            HybridListV2<int> *pbds_deque;
             // list<int> *lst;
 
             // double ellUpdateTimeTaken = 0;
@@ -473,9 +379,9 @@ int main()
                     // cout << endl
                     //      << "1: test efficient list vs list push_back insert" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
 
-                    insertToEfficientList(ell, size, pushBack_ellResult, pushBack_ell_memoryResult);
+                    insertToEfficientList(ell, size, pushBack_ellResult);
                     // process_mem_usage(rss);
                     // std::cout << " RSS(KB): " << rss << "\n";
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
@@ -486,8 +392,8 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size, pushBack_vecResult, pushBack_vec_memoryResult);
-                    result = valueCheck(ell, vec, size, get_after_pushBack_ellResult, get_after_pushBack_vecResult);
+                    insertToPbdsDeque(pbds_deque, size, pushBack_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size, get_after_pushBack_ellResult, get_after_pushBack_pbdsResult);
                     break;
                 case 1: // remove tests
                     // cout << endl
@@ -497,7 +403,7 @@ int main()
                         deleteIndexes[i] = size - (i + 1);
                     }
 
-                    removeFromEfficientList(ell, size / 2, popBackAfterPushBack_ellResult, popBackAfterPushBack_ell_memoryResult);
+                    removeFromEfficientList(ell, size / 2, popBackAfterPushBack_ellResult);
 
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
@@ -508,18 +414,18 @@ int main()
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
 
-                    removeFromVector(vec, size / 2, popBackAfterPushBack_vecResult, popBackAfterPushBack_vec_memoryResult);
+                    removeFromPbdsDeque(pbds_deque, size / 2, popBackAfterPushBack_pbdsResult);
 
-                    result = valueCheck(ell, vec, size / 2,
+                    result = valueCheck(ell, pbds_deque, size / 2,
                                         get_after_popBackAfterPushBack_ellResult,
-                                        get_after_popBackAfterPushBack_vecResult);
+                                        get_after_popBackAfterPushBack_pbdsResult);
 
                     break;
                 case 2: // insert tests
                     // cout << endl
-                    //      << "3: test efficient list vs vector push_back insert" << endl;
+                    //      << "3: test efficient list vs pbdstor push_back insert" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
                     insertToEfficientList(ell, size);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
@@ -529,18 +435,18 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size);
-                    result = valueCheck(ell, vec, size);
+                    insertToPbdsDeque(pbds_deque, size);
+                    result = valueCheck(ell, pbds_deque, size);
                     break;
                 case 3: // remove tests
                     // cout << endl
-                    //      << "4: test efficient list vs vector pop_front" << endl;
+                    //      << "4: test efficient list vs pbdstor pop_front" << endl;
                     for (int i = 0; i < size / 2; i++)
                     {
                         deleteIndexes[i] = 0;
                     }
                     removeFromEfficientList(ell, size / 2,
-                                            popFrontAfterPushBack_ellResult, popFrontAfterPushBack_ell_memoryResult);
+                                            popFrontAfterPushBack_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -549,23 +455,23 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    removeFromVector(vec, size / 2, popFrontAfterPushBack_vecResult, popFrontAfterPushBack_vec_memoryResult);
-                    result = valueCheck(ell, vec, size / 2,
+                    removeFromPbdsDeque(pbds_deque, size / 2, popFrontAfterPushBack_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size / 2,
                                         get_after_popFrontAfterPushBack_ellResult,
-                                        get_after_popFrontAfterPushBack_vecResult);
+                                        get_after_popFrontAfterPushBack_pbdsResult);
 
                     break;
                 case 4: // insert tests
                     // cout << endl
                     //      << "5: test efficient list vs list push_front" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
 
                     for (int i = 0; i < size; i++)
                     {
                         indexes[i] = 0;
                     }
-                    insertToEfficientList(ell, size, pushFront_ellResult, pushFront_ell_memoryResult);
+                    insertToEfficientList(ell, size, pushFront_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -574,13 +480,13 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size, pushFront_vecResult, pushFront_vec_memoryResult);
-                    result = valueCheck(ell, vec, size, get_after_pushFront_ellResult, get_after_pushFront_vecResult);
+                    insertToPbdsDeque(pbds_deque, size, pushFront_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size, get_after_pushFront_ellResult, get_after_pushFront_pbdsResult);
                     break;
                 case 5: // remove tests
                     // cout << endl
                     //      << "6: test efficient list vs list pop_front" << endl;
-                    removeFromEfficientList(ell, size / 2, popFrontAfterPushFront_ellResult, popFrontAfterPushFront_ell_memoryResult);
+                    removeFromEfficientList(ell, size / 2, popFrontAfterPushFront_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -589,16 +495,16 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    removeFromVector(vec, size / 2, popFrontAfterPushFront_vecResult, popFrontAfterPushFront_vec_memoryResult);
-                    result = valueCheck(ell, vec, size / 2,
+                    removeFromPbdsDeque(pbds_deque, size / 2, popFrontAfterPushFront_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size / 2,
                                         get_after_popFrontAfterPushFront_ellResult,
-                                        get_after_popFrontAfterPushFront_vecResult);
+                                        get_after_popFrontAfterPushFront_pbdsResult);
                     break;
                 case 6: // insert tests
                     // cout << endl
                     //      << "7: test efficient list vs list push_front" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
 
                     insertToEfficientList(ell, size);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
@@ -609,8 +515,8 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size);
-                    result = valueCheck(ell, vec, size);
+                    insertToPbdsDeque(pbds_deque, size);
+                    result = valueCheck(ell, pbds_deque, size);
                     break;
                 case 7: // remove tests
                     // cout << endl
@@ -619,7 +525,7 @@ int main()
                     {
                         deleteIndexes[i] = size - (i + 1);
                     }
-                    removeFromEfficientList(ell, size / 2, popBackAfterPushFront_ellResult, popBackAfterPushFront_ell_memoryResult);
+                    removeFromEfficientList(ell, size / 2, popBackAfterPushFront_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -628,16 +534,16 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    removeFromVector(vec, size / 2, popBackAfterPushFront_vecResult, popBackAfterPushFront_vec_memoryResult);
-                    result = valueCheck(ell, vec, size / 2,
+                    removeFromPbdsDeque(pbds_deque, size / 2, popBackAfterPushFront_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size / 2,
                                         get_after_popBackAfterPushFront_ellResult,
-                                        get_after_popBackAfterPushFront_vecResult);
+                                        get_after_popBackAfterPushFront_pbdsResult);
                     break;
                 case 8: // insert tests
                     // cout << endl
-                    //      << "9: test efficient list vs vector push_back" << endl;
+                    //      << "9: test efficient list vs pbdstor push_back" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
                     for (int i = 0; i < size; i++)
                     {
                         indexes[i] = i;
@@ -651,18 +557,17 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size);
-                    result = valueCheck(ell, vec, size);
+                    insertToPbdsDeque(pbds_deque, size);
+                    result = valueCheck(ell, pbds_deque, size);
                     break;
                 case 9: // remove tests
                     // cout << endl
-                    //      << "10: test efficient list vs vector random indices remove" << endl;
+                    //      << "10: test efficient list vs pbdstor random indices remove" << endl;
                     for (int i = 0; i < size / 2; i++)
                     {
                         deleteIndexes[i] = rand() % (size - (i + 1));
                     }
-                    removeFromEfficientList(ell, size / 2, removeRandomIndicesAfterPushBack_ellResult,
-                                            removeRandomIndicesAfterPushBack_ell_memoryResult);
+                    removeFromEfficientList(ell, size / 2, removeRandomIndicesAfterPushBack_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -671,22 +576,21 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    removeFromVector(vec, size / 2, removeRandomIndicesAfterPushBack_vecResult,
-                                     removeRandomIndicesAfterPushBack_vec_memoryResult);
-                    result = valueCheck(ell, vec, size / 2,
+                    removeFromPbdsDeque(pbds_deque, size / 2, removeRandomIndicesAfterPushBack_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size / 2,
                                         get_after_removeRandomIndicesAfterPushBack_ellResult,
-                                        get_after_removeRandomIndicesAfterPushBack_vecResult);
+                                        get_after_removeRandomIndicesAfterPushBack_pbdsResult);
                     break;
                 case 10: // insert tests
                     // cout << endl
-                    //      << "11: test efficient list vs vector random indices insert" << endl;
+                    //      << "11: test efficient list vs pbdstor random indices insert" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
                     for (int i = 0; i < size; i++)
                     {
                         indexes[i] = rand() % (i + 1);
                     }
-                    insertToEfficientList(ell, size, insertRandomIndices_ellResult, insertRandomIndices_ell_memoryResult);
+                    insertToEfficientList(ell, size, insertRandomIndices_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -695,18 +599,18 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size, insertRandomIndices_vecResult, insertRandomIndices_vec_memoryResult);
-                    result = valueCheck(ell, vec, size,
-                                        get_after_insertRandomIndices_ellResult, get_after_insertRandomIndices_vecResult);
+                    insertToPbdsDeque(pbds_deque, size, insertRandomIndices_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size,
+                                        get_after_insertRandomIndices_ellResult, get_after_insertRandomIndices_pbdsResult);
                     break;
                 case 11: // remove tests
                     // cout << endl
-                    //      << "12: test efficient list vs vector random indices remove" << endl;
+                    //      << "12: test efficient list vs pbdstor random indices remove" << endl;
                     for (int i = 0; i < size / 2; i++)
                     {
                         deleteIndexes[i] = rand() % (size - (i + 1));
                     }
-                    removeFromEfficientList(ell, size / 2, removeRandomIndices_ellResult, removeRandomIndices_ell_memoryResult);
+                    removeFromEfficientList(ell, size / 2, removeRandomIndices_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -715,16 +619,16 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    removeFromVector(vec, size / 2, removeRandomIndices_vecResult, removeRandomIndices_vec_memoryResult);
-                    result = valueCheck(ell, vec, size / 2,
-                                        get_after_removeRandomIndices_ellResult, get_after_removeRandomIndices_vecResult);
+                    removeFromPbdsDeque(pbds_deque, size / 2, removeRandomIndices_pbdsResult);
+                    result = valueCheck(ell, pbds_deque, size / 2,
+                                        get_after_removeRandomIndices_ellResult, get_after_removeRandomIndices_pbdsResult);
                     break;
 
                 case 12: // insert tests
                     // cout << endl
                     //      << "13: test efficient list vs list half push_front then push_back the other half" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
 
                     for (int i = 0; i < size / 2; i++)
                     {
@@ -732,7 +636,7 @@ int main()
                         indexes[i + size / 2] = i + size / 2;
                     }
 
-                    insertToEfficientList(ell, size, pushFront_pushBack_ellResult, pushFront_pushBack_ell_memoryResult);
+                    insertToEfficientList(ell, size, pushFront_pushBack_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -741,11 +645,11 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size, pushFront_pushBack_vecResult, pushFront_pushBack_vec_memoryResult);
+                    insertToPbdsDeque(pbds_deque, size, pushFront_pushBack_pbdsResult);
 
-                    result = valueCheck(ell, vec, size,
+                    result = valueCheck(ell, pbds_deque, size,
                                         get_after_pushFront_pushBack_ellResult,
-                                        get_after_pushFront_pushBack_vecResult);
+                                        get_after_pushFront_pushBack_pbdsResult);
                     break;
                 case 13: // remove tests
                     // cout << endl
@@ -755,7 +659,7 @@ int main()
                         deleteIndexes[i] = 0;
                         deleteIndexes[i + size / 4] = size - (i + size / 4 + 1);
                     }
-                    removeFromEfficientList(ell, size / 2, popFront_popBack_ellResult, popFront_popBack_ell_memoryResult);
+                    removeFromEfficientList(ell, size / 2, popFront_popBack_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -764,17 +668,17 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    removeFromVector(vec, size / 2, popFront_popBack_vecResult, popFront_popBack_vec_memoryResult);
+                    removeFromPbdsDeque(pbds_deque, size / 2, popFront_popBack_pbdsResult);
 
-                    result = valueCheck(ell, vec, size / 2,
+                    result = valueCheck(ell, pbds_deque, size / 2,
                                         get_after_popFront_popBack_ellResult,
-                                        get_after_popFront_popBack_vecResult);
+                                        get_after_popFront_popBack_pbdsResult);
                     break;
                 case 14: // insert tests
                     // cout << endl
                     //      << "15: test efficient list vs list half push_back then push_front the other half" << endl;
                     ell = new EfficientList<int>;
-                    vec = new vector<int>();
+                    pbds_deque = new HybridListV2<int>();
 
                     for (int i = 0; i < size / 2; i++)
                     {
@@ -782,7 +686,7 @@ int main()
                         indexes[i + size / 2] = 0;
                     }
 
-                    insertToEfficientList(ell, size, pushBack_pushFront_ellResult, pushBack_pushFront_ell_memoryResult);
+                    insertToEfficientList(ell, size, pushBack_pushFront_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -791,11 +695,11 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    insertToVector(vec, size, pushBack_pushFront_vecResult, pushBack_pushFront_vec_memoryResult);
+                    insertToPbdsDeque(pbds_deque, size, pushBack_pushFront_pbdsResult);
 
-                    result = valueCheck(ell, vec, size,
+                    result = valueCheck(ell, pbds_deque, size,
                                         get_after_pushBack_pushFront_ellResult,
-                                        get_after_pushBack_pushFront_vecResult);
+                                        get_after_pushBack_pushFront_pbdsResult);
                     break;
                 case 15: // remove tests
                     // cout << endl
@@ -805,7 +709,7 @@ int main()
                         deleteIndexes[i] = size - (i + 1);
                         deleteIndexes[i + size / 4] = 0;
                     }
-                    removeFromEfficientList(ell, size / 2, popBack_popFront_ellResult, popBack_popFront_ell_memoryResult);
+                    removeFromEfficientList(ell, size / 2, popBack_popFront_ellResult);
                     // cout << "a1LeftInsertion: " << ell->mIPPS23RBbt->a1LeftInsertion << endl;
                     // cout << "a1RightInsertion: " << ell->mIPPS23RBbt->a1RightInsertion << endl;
                     // cout << "a2LeftInsertion: " << ell->mIPPS23RBbt->a2LeftInsertion << endl;
@@ -814,11 +718,11 @@ int main()
                     // cout << "b1RightInsertion: " << ell->mIPPS23RBbt->b1RightInsertion << endl;
                     // cout << "b2LeftInsertion: " << ell->mIPPS23RBbt->b2LeftInsertion << endl;
                     // cout << "b2RightInsertion: " << ell->mIPPS23RBbt->b2RightInsertion << endl;
-                    removeFromVector(vec, size / 2, popBack_popFront_vecResult, popBack_popFront_vec_memoryResult);
+                    removeFromPbdsDeque(pbds_deque, size / 2, popBack_popFront_pbdsResult);
 
-                    result = valueCheck(ell, vec, size / 2,
+                    result = valueCheck(ell, pbds_deque, size / 2,
                                         get_after_popBack_popFront_ellResult,
-                                        get_after_popBack_popFront_vecResult);
+                                        get_after_popBack_popFront_pbdsResult);
                     break;
                 }
 
@@ -840,13 +744,13 @@ int main()
             // cin >> dummy;
 
             delete ell;
-            delete vec;
+            delete pbds_deque;
         }
     }
 
     auto saveMapToCSV = [](const map<int, double> *data, const string &filename)
     {
-        string fullPath = "/workspaces/EfficientList/timeTakenResults/half_remove/" + filename;
+        string fullPath = "/home/sepehr/uni/DS/paper/EfficientList/C++/timeTakenResults/half_remove/" + filename;
         ofstream file(fullPath);
         if (file.is_open())
         {
@@ -868,7 +772,7 @@ int main()
 
     auto saveMemoryMapToCSV = [](const map<int, double> *data, const string &filename)
     {
-        string fullPath = "/workspaces/EfficientList/memoryResults/half_remove/" + filename;
+        string fullPath = "~/uni/DS/paper/EfficientList/C++/memoryResults/half_remove/" + filename;
         ofstream file(fullPath);
         if (file.is_open())
         {
@@ -901,17 +805,17 @@ int main()
     saveMapToCSV(removeRandomIndicesAfterPushBack_ellResult, "removeRandomIndicesAfterPushBack_ell_results.csv");
     saveMapToCSV(get_after_removeRandomIndicesAfterPushBack_ellResult, "get_after_removeRandomIndicesAfterPushBack_ell_results.csv");
 
-    saveMapToCSV(pushBack_vecResult, "pushBack_vec_results.csv");
-    saveMapToCSV(get_after_pushBack_vecResult, "get_after_pushBack_vec_results.csv");
+    saveMapToCSV(pushBack_pbdsResult, "pushBack_pbdsV2_results.csv");
+    saveMapToCSV(get_after_pushBack_pbdsResult, "get_after_pushBack_pbdsV2_results.csv");
 
-    saveMapToCSV(popBackAfterPushBack_vecResult, "popBackAfterPushBack_vec_results.csv");
-    saveMapToCSV(get_after_popBackAfterPushBack_vecResult, "get_after_popBackAfterPushBack_vec_results.csv");
+    saveMapToCSV(popBackAfterPushBack_pbdsResult, "popBackAfterPushBack_pbdsV2_results.csv");
+    saveMapToCSV(get_after_popBackAfterPushBack_pbdsResult, "get_after_popBackAfterPushBack_pbdsV2_results.csv");
 
-    saveMapToCSV(popFrontAfterPushBack_vecResult, "popFrontAfterPushBack_vec_results.csv");
-    saveMapToCSV(get_after_popFrontAfterPushBack_vecResult, "get_after_popFrontAfterPushBack_vec_results.csv");
+    saveMapToCSV(popFrontAfterPushBack_pbdsResult, "popFrontAfterPushBack_pbdsV2_results.csv");
+    saveMapToCSV(get_after_popFrontAfterPushBack_pbdsResult, "get_after_popFrontAfterPushBack_pbdsV2_results.csv");
 
-    saveMapToCSV(removeRandomIndicesAfterPushBack_vecResult, "removeRandomIndicesAfterPushBack_vec_results.csv");
-    saveMapToCSV(get_after_removeRandomIndicesAfterPushBack_vecResult, "get_after_removeRandomIndicesAfterPushBack_vec_results.csv");
+    saveMapToCSV(removeRandomIndicesAfterPushBack_pbdsResult, "removeRandomIndicesAfterPushBack_pbdsV2_results.csv");
+    saveMapToCSV(get_after_removeRandomIndicesAfterPushBack_pbdsResult, "get_after_removeRandomIndicesAfterPushBack_pbdsV2_results.csv");
 
     saveMapToCSV(pushFront_ellResult, "pushFront_ell_results.csv");
     saveMapToCSV(get_after_pushFront_ellResult, "get_after_pushFront_ell_results.csv");
@@ -922,14 +826,14 @@ int main()
     saveMapToCSV(popBackAfterPushFront_ellResult, "popBackAfterPushFront_ell_results.csv");
     saveMapToCSV(get_after_popBackAfterPushFront_ellResult, "get_after_popBackAfterPushFront_ell_results.csv");
 
-    saveMapToCSV(pushFront_vecResult, "pushFront_vec_results.csv");
-    saveMapToCSV(get_after_pushFront_vecResult, "get_after_pushFront_vec_results.csv");
+    saveMapToCSV(pushFront_pbdsResult, "pushFront_pbdsV2_results.csv");
+    saveMapToCSV(get_after_pushFront_pbdsResult, "get_after_pushFront_pbdsV2_results.csv");
 
-    saveMapToCSV(popFrontAfterPushFront_vecResult, "popFrontAfterPushFront_vec_results.csv");
-    saveMapToCSV(get_after_popFrontAfterPushFront_vecResult, "get_after_popFrontAfterPushFront_vec_results.csv");
+    saveMapToCSV(popFrontAfterPushFront_pbdsResult, "popFrontAfterPushFront_pbdsV2_results.csv");
+    saveMapToCSV(get_after_popFrontAfterPushFront_pbdsResult, "get_after_popFrontAfterPushFront_pbdsV2_results.csv");
 
-    saveMapToCSV(popBackAfterPushFront_vecResult, "popBackAfterPushFront_vec_results.csv");
-    saveMapToCSV(get_after_popBackAfterPushFront_vecResult, "get_after_popBackAfterPushFront_vec_results.csv");
+    saveMapToCSV(popBackAfterPushFront_pbdsResult, "popBackAfterPushFront_pbdsV2_results.csv");
+    saveMapToCSV(get_after_popBackAfterPushFront_pbdsResult, "get_after_popBackAfterPushFront_pbdsV2_results.csv");
 
     saveMapToCSV(insertRandomIndices_ellResult, "insertRandomIndices_ell_results.csv");
     saveMapToCSV(get_after_insertRandomIndices_ellResult, "get_after_insertRandomIndices_ell_results.csv");
@@ -937,11 +841,11 @@ int main()
     saveMapToCSV(removeRandomIndices_ellResult, "removeRandomIndices_ell_results.csv");
     saveMapToCSV(get_after_removeRandomIndices_ellResult, "get_after_removeRandomIndices_ell_results.csv");
 
-    saveMapToCSV(insertRandomIndices_vecResult, "insertRandomIndices_vec_results.csv");
-    saveMapToCSV(get_after_insertRandomIndices_vecResult, "get_after_insertRandomIndices_vec_results.csv");
+    saveMapToCSV(insertRandomIndices_pbdsResult, "insertRandomIndices_pbdsV2_results.csv");
+    saveMapToCSV(get_after_insertRandomIndices_pbdsResult, "get_after_insertRandomIndices_pbdsV2_results.csv");
 
-    saveMapToCSV(removeRandomIndices_vecResult, "removeRandomIndices_vec_results.csv");
-    saveMapToCSV(get_after_removeRandomIndices_vecResult, "get_after_removeRandomIndices_vec_results.csv");
+    saveMapToCSV(removeRandomIndices_pbdsResult, "removeRandomIndices_pbdsV2_results.csv");
+    saveMapToCSV(get_after_removeRandomIndices_pbdsResult, "get_after_removeRandomIndices_pbdsV2_results.csv");
 
     saveMapToCSV(pushFront_pushBack_ellResult, "pushFront_pushBack_ell_results.csv");
     saveMapToCSV(get_after_pushFront_pushBack_ellResult, "get_after_pushFront_pushBack_ell_results.csv");
@@ -949,11 +853,11 @@ int main()
     saveMapToCSV(popFront_popBack_ellResult, "popFront_popBack_ell_results.csv");
     saveMapToCSV(get_after_popFront_popBack_ellResult, "get_after_popFront_popBack_ell_results.csv");
 
-    saveMapToCSV(pushFront_pushBack_vecResult, "pushFront_pushBack_vec_results.csv");
-    saveMapToCSV(get_after_pushFront_pushBack_vecResult, "get_after_pushFront_pushBack_vec_results.csv");
+    saveMapToCSV(pushFront_pushBack_pbdsResult, "pushFront_pushBack_pbdsV2_results.csv");
+    saveMapToCSV(get_after_pushFront_pushBack_pbdsResult, "get_after_pushFront_pushBack_pbdsV2_results.csv");
 
-    saveMapToCSV(popFront_popBack_vecResult, "popFront_popBack_vec_results.csv");
-    saveMapToCSV(get_after_popFront_popBack_vecResult, "get_after_popFront_popBack_vec_results.csv");
+    saveMapToCSV(popFront_popBack_pbdsResult, "popFront_popBack_pbdsV2_results.csv");
+    saveMapToCSV(get_after_popFront_popBack_pbdsResult, "get_after_popFront_popBack_pbdsV2_results.csv");
 
     saveMapToCSV(pushBack_pushFront_ellResult, "pushBack_pushFront_ell_results.csv");
     saveMapToCSV(get_after_pushBack_pushFront_ellResult, "get_after_pushBack_pushFront_ell_results.csv");
@@ -961,74 +865,11 @@ int main()
     saveMapToCSV(popBack_popFront_ellResult, "popBack_popFront_ell_results.csv");
     saveMapToCSV(get_after_popBack_popFront_ellResult, "get_after_popBack_popFront_ell_results.csv");
 
-    saveMapToCSV(pushBack_pushFront_vecResult, "pushBack_pushFront_vec_results.csv");
-    saveMapToCSV(get_after_pushBack_pushFront_vecResult, "get_after_pushBack_pushFront_vec_results.csv");
+    saveMapToCSV(pushBack_pushFront_pbdsResult, "pushBack_pushFront_pbdsV2_results.csv");
+    saveMapToCSV(get_after_pushBack_pushFront_pbdsResult, "get_after_pushBack_pushFront_pbdsV2_results.csv");
 
-    saveMapToCSV(popBack_popFront_vecResult, "popBack_popFront_vec_results.csv");
-    saveMapToCSV(get_after_popBack_popFront_vecResult, "get_after_popBack_popFront_vec_results.csv");
-    // Save all memory results
-    saveMemoryMapToCSV(pushBack_ell_memoryResult, "pushBack_ell_memory_results.csv");
-    saveMemoryMapToCSV(pushBack_vec_memoryResult, "pushBack_vec_memory_results.csv");
-    saveMemoryMapToCSV(popBackAfterPushBack_ell_memoryResult, "popBackAfterPushBack_ell_memory_results.csv");
-    saveMemoryMapToCSV(popBackAfterPushBack_vec_memoryResult, "popBackAfterPushBack_vec_memory_results.csv");
-    saveMemoryMapToCSV(popFrontAfterPushBack_ell_memoryResult, "popFrontAfterPushBack_ell_memory_results.csv");
-    saveMemoryMapToCSV(popFrontAfterPushBack_vec_memoryResult, "popFrontAfterPushBack_vec_memory_results.csv");
-    saveMemoryMapToCSV(removeRandomIndicesAfterPushBack_ell_memoryResult, "removeRandomIndicesAfterPushBack_ell_memory_results.csv");
-    saveMemoryMapToCSV(removeRandomIndicesAfterPushBack_vec_memoryResult, "removeRandomIndicesAfterPushBack_vec_memory_results.csv");
-
-    saveMemoryMapToCSV(pushFront_ell_memoryResult, "pushFront_ell_memory_results.csv");
-    saveMemoryMapToCSV(pushFront_vec_memoryResult, "pushFront_vec_memory_results.csv");
-    saveMemoryMapToCSV(popFrontAfterPushFront_ell_memoryResult, "popFrontAfterPushFront_ell_memory_results.csv");
-    saveMemoryMapToCSV(popFrontAfterPushFront_vec_memoryResult, "popFrontAfterPushFront_vec_memory_results.csv");
-    saveMemoryMapToCSV(popBackAfterPushFront_ell_memoryResult, "popBackAfterPushFront_ell_memory_results.csv");
-    saveMemoryMapToCSV(popBackAfterPushFront_vec_memoryResult, "popBackAfterPushFront_vec_memory_results.csv");
-
-    saveMemoryMapToCSV(insertRandomIndices_ell_memoryResult, "insertRandomIndices_ell_memory_results.csv");
-    saveMemoryMapToCSV(insertRandomIndices_vec_memoryResult, "insertRandomIndices_vec_memory_results.csv");
-    saveMemoryMapToCSV(removeRandomIndices_ell_memoryResult, "removeRandomIndices_ell_memory_results.csv");
-    saveMemoryMapToCSV(removeRandomIndices_vec_memoryResult, "removeRandomIndices_vec_memory_results.csv");
-
-    saveMemoryMapToCSV(pushFront_pushBack_ell_memoryResult, "pushFront_pushBack_ell_memory_results.csv");
-    saveMemoryMapToCSV(pushFront_pushBack_vec_memoryResult, "pushFront_pushBack_vec_memory_results.csv");
-    saveMemoryMapToCSV(popFront_popBack_ell_memoryResult, "popFront_popBack_ell_memory_results.csv");
-    saveMemoryMapToCSV(popFront_popBack_vec_memoryResult, "popFront_popBack_vec_memory_results.csv");
-
-    saveMemoryMapToCSV(pushBack_pushFront_ell_memoryResult, "pushBack_pushFront_ell_memory_results.csv");
-    saveMemoryMapToCSV(pushBack_pushFront_vec_memoryResult, "pushBack_pushFront_vec_memory_results.csv");
-    saveMemoryMapToCSV(popBack_popFront_ell_memoryResult, "popBack_popFront_ell_memory_results.csv");
-    saveMemoryMapToCSV(popBack_popFront_vec_memoryResult, "popBack_popFront_vec_memory_results.csv");
-
-    // Clean up memory maps
-    delete pushBack_ell_memoryResult;
-    delete pushBack_vec_memoryResult;
-    delete popBackAfterPushBack_ell_memoryResult;
-    delete popBackAfterPushBack_vec_memoryResult;
-    delete popFrontAfterPushBack_ell_memoryResult;
-    delete popFrontAfterPushBack_vec_memoryResult;
-    delete removeRandomIndicesAfterPushBack_ell_memoryResult;
-    delete removeRandomIndicesAfterPushBack_vec_memoryResult;
-
-    delete pushFront_ell_memoryResult;
-    delete pushFront_vec_memoryResult;
-    delete popFrontAfterPushFront_ell_memoryResult;
-    delete popFrontAfterPushFront_vec_memoryResult;
-    delete popBackAfterPushFront_ell_memoryResult;
-    delete popBackAfterPushFront_vec_memoryResult;
-
-    delete insertRandomIndices_ell_memoryResult;
-    delete insertRandomIndices_vec_memoryResult;
-    delete removeRandomIndices_ell_memoryResult;
-    delete removeRandomIndices_vec_memoryResult;
-
-    delete pushFront_pushBack_ell_memoryResult;
-    delete pushFront_pushBack_vec_memoryResult;
-    delete popFront_popBack_ell_memoryResult;
-    delete popFront_popBack_vec_memoryResult;
-
-    delete pushBack_pushFront_ell_memoryResult;
-    delete pushBack_pushFront_vec_memoryResult;
-    delete popBack_popFront_ell_memoryResult;
-    delete popBack_popFront_vec_memoryResult;
+    saveMapToCSV(popBack_popFront_pbdsResult, "popBack_popFront_pbdsV2_results.csv");
+    saveMapToCSV(get_after_popBack_popFront_pbdsResult, "get_after_popBack_popFront_pbdsV2_results.csv");
 
     // Clean up time taken maps
     delete pushBack_ellResult;
@@ -1043,17 +884,17 @@ int main()
     delete removeRandomIndicesAfterPushBack_ellResult;
     delete get_after_removeRandomIndicesAfterPushBack_ellResult;
 
-    delete pushBack_vecResult;
-    delete get_after_pushBack_vecResult;
+    delete pushBack_pbdsResult;
+    delete get_after_pushBack_pbdsResult;
 
-    delete popBackAfterPushBack_vecResult;
-    delete get_after_popBackAfterPushBack_vecResult;
+    delete popBackAfterPushBack_pbdsResult;
+    delete get_after_popBackAfterPushBack_pbdsResult;
 
-    delete popFrontAfterPushBack_vecResult;
-    delete get_after_popFrontAfterPushBack_vecResult;
+    delete popFrontAfterPushBack_pbdsResult;
+    delete get_after_popFrontAfterPushBack_pbdsResult;
 
-    delete removeRandomIndicesAfterPushBack_vecResult;
-    delete get_after_removeRandomIndicesAfterPushBack_vecResult;
+    delete removeRandomIndicesAfterPushBack_pbdsResult;
+    delete get_after_removeRandomIndicesAfterPushBack_pbdsResult;
 
     delete pushFront_ellResult;
     delete get_after_pushFront_ellResult;
@@ -1064,14 +905,14 @@ int main()
     delete popBackAfterPushFront_ellResult;
     delete get_after_popBackAfterPushFront_ellResult;
 
-    delete pushFront_vecResult;
-    delete get_after_pushFront_vecResult;
+    delete pushFront_pbdsResult;
+    delete get_after_pushFront_pbdsResult;
 
-    delete popFrontAfterPushFront_vecResult;
-    delete get_after_popFrontAfterPushFront_vecResult;
+    delete popFrontAfterPushFront_pbdsResult;
+    delete get_after_popFrontAfterPushFront_pbdsResult;
 
-    delete popBackAfterPushFront_vecResult;
-    delete get_after_popBackAfterPushFront_vecResult;
+    delete popBackAfterPushFront_pbdsResult;
+    delete get_after_popBackAfterPushFront_pbdsResult;
 
     delete insertRandomIndices_ellResult;
     delete get_after_insertRandomIndices_ellResult;
@@ -1079,11 +920,11 @@ int main()
     delete removeRandomIndices_ellResult;
     delete get_after_removeRandomIndices_ellResult;
 
-    delete insertRandomIndices_vecResult;
-    delete get_after_insertRandomIndices_vecResult;
+    delete insertRandomIndices_pbdsResult;
+    delete get_after_insertRandomIndices_pbdsResult;
 
-    delete removeRandomIndices_vecResult;
-    delete get_after_removeRandomIndices_vecResult;
+    delete removeRandomIndices_pbdsResult;
+    delete get_after_removeRandomIndices_pbdsResult;
 
     delete pushFront_pushBack_ellResult;
     delete get_after_pushFront_pushBack_ellResult;
@@ -1091,11 +932,11 @@ int main()
     delete popFront_popBack_ellResult;
     delete get_after_popFront_popBack_ellResult;
 
-    delete pushFront_pushBack_vecResult;
-    delete get_after_pushFront_pushBack_vecResult;
+    delete pushFront_pushBack_pbdsResult;
+    delete get_after_pushFront_pushBack_pbdsResult;
 
-    delete popFront_popBack_vecResult;
-    delete get_after_popFront_popBack_vecResult;
+    delete popFront_popBack_pbdsResult;
+    delete get_after_popFront_popBack_pbdsResult;
 
     delete pushBack_pushFront_ellResult;
     delete get_after_pushBack_pushFront_ellResult;
@@ -1103,11 +944,11 @@ int main()
     delete popBack_popFront_ellResult;
     delete get_after_popBack_popFront_ellResult;
 
-    delete pushBack_pushFront_vecResult;
-    delete get_after_pushBack_pushFront_vecResult;
+    delete pushBack_pushFront_pbdsResult;
+    delete get_after_pushBack_pushFront_pbdsResult;
 
-    delete popBack_popFront_vecResult;
-    delete get_after_popBack_popFront_vecResult;
+    delete popBack_popFront_pbdsResult;
+    delete get_after_popBack_popFront_pbdsResult;
     // delete lst;
     return 0;
 }
